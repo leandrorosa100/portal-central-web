@@ -239,9 +239,9 @@ using (var scope = app.Services.CreateScope())
             if (!db.Users.Any(u => u.Username == seedUsername))
             {
                 db.Users.Add(new User { Username = seedUsername, PasswordHash = HashPassword(seedPassword), Role = "Admin" });
-                db.SaveChanges();
             }
-            app.Logger.LogInformation("Banco pronto na tentativa {N}: schema verificado e admin garantido", attempt);
+            await db.SaveChangesAsync();
+            app.Logger.LogInformation("Banco pronto na tentativa {N}: schema verificado e seeds garantidos", attempt);
             break;
         }
         catch (Exception ex)
