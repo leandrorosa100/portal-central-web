@@ -664,7 +664,7 @@ const App = () => {
       )}
 
       <footer style={{ backgroundColor: C.dark, padding: '28px 16px', textAlign: 'center' }}>
-        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v2.0.0</div>
+        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v2.1.0</div>
       </footer>
     </div>
   );

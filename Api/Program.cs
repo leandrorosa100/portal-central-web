@@ -381,6 +381,10 @@ app.MapGet("/api/articles", async (AppDbContext db) =>
     Results.Ok(await db.Articles.OrderByDescending(a => a.CreatedAt).Take(24).ToListAsync()));
 
 // --- Cidades (admin) ---
+app.MapGet("/api/cities/suggest", async (string? q, Api.Services.IWeatherService weather) =>
+    Results.Ok(await weather.SuggestCitiesAsync(q ?? string.Empty)))
+    .RequireAuthorization("AdminOnly");
+
 app.MapPost("/api/admin/cities", async (City input, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(input.Name)) return Results.BadRequest(new { message = "Nome da cidade obrigatorio" });

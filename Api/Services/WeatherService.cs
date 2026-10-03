@@ -7,7 +7,10 @@ namespace Api.Services;
 public interface IWeatherService
 {
     Task<WeatherDetails> GetCurrentWeatherAsync(string city);
+    Task<List<CitySuggestion>> SuggestCitiesAsync(string query);
 }
+
+public record CitySuggestion(string Name, string? Admin1, string? Country, string? CountryCode);
 
 public class WeatherDetails
 {
@@ -102,6 +105,23 @@ public class WeatherService : IWeatherService
         return (DefaultLat, DefaultLon, DefaultCity);
     }
 
+    // Autocomplete de cidades para o painel admin (mesma API de geocoding do clima)
+    public async Task<List<CitySuggestion>> SuggestCitiesAsync(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < 2)
+            return new List<CitySuggestion>();
+        try
+        {
+            var u = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(query.Trim())}&count=8&language=pt&format=json";
+            var r = await _httpClient.GetFromJsonAsync<GeoSearchResponse>(u);
+            return r?.Results?.Select(g => new CitySuggestion(g.Name ?? "", g.Admin1, g.Country, g.CountryCode)).ToList() ?? new List<CitySuggestion>();
+        }
+        catch
+        {
+            return new List<CitySuggestion>();
+        }
+    }
+
     private static (string condition, string icon) MapWeatherCode(int code) => code switch
     {
         0 => ("Céu limpo", "Clear"),
@@ -139,6 +159,19 @@ public class WeatherService : IWeatherService
     private class GeoResponse
     {
         [JsonPropertyName("results")] public List<GeoResult>? Results { get; set; }
+    }
+
+    private class GeoSearchResponse
+    {
+        [JsonPropertyName("results")] public List<GeoFull>? Results { get; set; }
+    }
+
+    private class GeoFull
+    {
+        [JsonPropertyName("name")] public string? Name { get; set; }
+        [JsonPropertyName("admin1")] public string? Admin1 { get; set; }
+        [JsonPropertyName("country")] public string? Country { get; set; }
+        [JsonPropertyName("country_code")] public string? CountryCode { get; set; }
     }
 
     private class GeoResult

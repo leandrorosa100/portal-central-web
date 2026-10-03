@@ -1,8 +1,9 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 
 interface CityItem { id: number; name: string; isPrimary: boolean }
 interface UserItem { id: number; username: string; role: string }
 interface Stats { users: number; cities: number; pins: number; articles: number }
+interface CitySuggestion { name: string; admin1: string | null; country: string | null; countryCode: string | null }
 
 interface Props {
   token: string;
@@ -20,7 +21,11 @@ const C = {
 const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<UserItem[]>([]);
-  const [newCity, setNewCity] = useState('');
+  const [cityQuery, setCityQuery] = useState('');
+  const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<CitySuggestion[]>([]);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'Editor' });
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -54,13 +59,45 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
     try { setStats(await api('/admin/stats')); } catch { /* auth handled in api */ }
   };
 
+  const flagOf = (cc: string | null) =>
+    cc && cc.length === 2 ? String.fromCodePoint(...[...cc.toUpperCase()].map(ch => 127397 + ch.charCodeAt(0))) : '📍';
+
+  const onCityQueryChange = (value: string) => {
+    setCityQuery(value);
+    setSelectedCity(null); // qualquer digitacao invalida a selecao anterior
+    setShowSuggest(true);
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    if (value.trim().length < 2) { setSuggestions([]); return; }
+    suggestTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/cities/suggest?q=${encodeURIComponent(value.trim())}`, {
+          headers: { Authorization: `Bearer ***}` },
+        });
+        const list = res.ok ? await res.json() : [];
+        setSuggestions(Array.isArray(list) ? list : []);
+      } catch { setSuggestions([]); }
+    }, 300);
+  };
+
+  const pickCity = (s: CitySuggestion) => {
+    setSelectedCity(s.name);
+    setCityQuery(s.name);
+    setSuggestions([]);
+    setShowSuggest(false);
+    setMsg('');
+  };
+
   const addCity = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newCity.trim() || busy) return;
+    if (busy) return;
+    if (!selectedCity || cityQuery !== selectedCity) {
+      setMsg('Selecione uma cidade válida na lista de sugestões (digite e clique em uma opção).');
+      return;
+    }
     setBusy(true); setMsg('');
     try {
-      await api('/admin/cities', { method: 'POST', body: JSON.stringify({ name: newCity.trim(), isPrimary: false }) });
-      setNewCity('');
+      await api('/admin/cities', { method: 'POST', body: JSON.stringify({ name: selectedCity, isPrimary: false }) });
+      setCityQuery(''); setSelectedCity(null); setSuggestions([]);
       onCitiesChanged();
       refreshStats();
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
@@ -77,7 +114,9 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
 
   const addUser = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newUser.username.trim() || newUser.password.length < 8 || busy) return;
+    if (busy) return;
+    if (!newUser.username.trim()) { setMsg('Usuário: informe um nome de usuário.'); return; }
+    if (newUser.password.length < 8) { setMsg('A senha precisa ter pelo menos 8 caracteres.'); return; }
     setBusy(true); setMsg('');
     try {
       setUsers(await api('/admin/users', { method: 'POST', body: JSON.stringify(newUser) }));
@@ -132,10 +171,42 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
               </div>
             ))}
           </div>
-          <form onSubmit={addCity} style={{ display: 'flex', gap: 8 }}>
-            <input value={newCity} onChange={e => setNewCity(e.target.value)} placeholder="Ex.: Rio de Janeiro" style={{ ...inputStyle, flex: 1 }} />
+          <form onSubmit={addCity} style={{ display: 'flex', gap: 8, position: 'relative' }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <input
+                value={cityQuery}
+                onChange={e => onCityQueryChange(e.target.value)}
+                onFocus={() => { if (cityQuery.trim().length >= 2) setShowSuggest(true); }}
+                onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
+                placeholder="Ex.: São Paulo, Lisboa..."
+                style={inputStyle}
+                autoComplete="off"
+              />
+              {showSuggest && suggestions.length > 0 && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, backgroundColor: '#fff', border: `1px solid ${C.border}`, borderRadius: 10, marginTop: 4, boxShadow: '0 10px 30px rgba(15,23,42,.15)', maxHeight: 230, overflowY: 'auto' }}>
+                  {suggestions.map((s, i) => (
+                    <div
+                      key={`${s.name}-${i}`}
+                      onMouseDown={() => pickCity(s)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', borderBottom: i < suggestions.length - 1 ? `1px solid ${C.border}` : 'none' }}
+                      onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#eff6ff'; }}
+                      onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                      <span style={{ fontSize: 15 }}>{flagOf(s.countryCode)}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</span>
+                      <span style={{ fontSize: 11.5, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {[s.admin1, s.country].filter(Boolean).join(', ')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <button type="submit" disabled={busy} style={{ ...btnBlue, padding: '10px 18px' }}>Adicionar</button>
           </form>
+          <div style={{ fontSize: 11.5, color: C.muted2, marginTop: 8 }}>
+            {selectedCity ? `✓ ${selectedCity} selecionada` : 'Digite pelo menos 2 letras e escolha uma cidade na lista.'}
+          </div>
         </div>
 
         {/* Usuarios */}
@@ -159,7 +230,7 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
                 <option value="Admin">Admin</option>
               </select>
             </div>
-            <input type="password" value={newUser.password} onChange={e => setNewUser(f => ({ ...f, password: e.target.value }))} placeholder="Senha (8+ caracteres)" style={inputStyle} />
+            <input type="password" value={newUser.password} onChange={e => setNewUser(f => ({ ...f, password: e.target.value }))} placeholder="Senha (mínimo 8 caracteres)" style={inputStyle} />
             <button type="submit" disabled={busy} style={btnBlue}>Criar usuário</button>
           </form>
         </div>
