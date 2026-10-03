@@ -9,10 +9,13 @@ RUN npm run build
 # ---- Stage 2: Build .NET backend ----
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api
 WORKDIR /src
+# Render free tier: 512MB de RAM no build; GC sem limite derruba o build no OOM-killer.
+ENV DOTNET_gcServer=0 \
+    DOTNET_GCHeapHardLimit=300000000
 COPY Api/Api.csproj ./
 RUN dotnet restore
 COPY Api/ ./
-RUN dotnet publish -c Release -o out
+RUN dotnet publish -c Release -o out --nologo -v q
 
 # ---- Stage 3: Runtime (single container serves API + SPA) ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0

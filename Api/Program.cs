@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
+using Npgsql;
 using System.Text;
 using System.Threading.RateLimiting;
 using Scalar.AspNetCore;
@@ -60,12 +61,45 @@ var jwtAudience = "PortalCentralUsers";
 
 // --- Database: PostgreSQL (Supabase) em producao, SQLite local em dev ---
 var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+if (!string.IsNullOrWhiteSpace(databaseUrl))
+{
+    databaseUrl = databaseUrl.Trim();
+    // Render "Secret Files" entregam um caminho de arquivo em vez do valor
+    if (File.Exists(databaseUrl))
+        databaseUrl = File.ReadAllText(databaseUrl).Trim();
+}
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     if (!string.IsNullOrWhiteSpace(databaseUrl))
-        options.UseNpgsql(databaseUrl);
+    {
+        if (databaseUrl.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+            databaseUrl.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        {
+            // NpgsqlConnectionStringBuilder nao aceita URI nesse caminho: converter para
+            // formato chave=valor manualmente (torna tolerante a espacos/percent-encoding)
+            var uri = new Uri(databaseUrl);
+            var userInfo = uri.UserInfo.Split(':');
+            var cs = new NpgsqlConnectionStringBuilder
+            {
+                Host = uri.Host,
+                Port = uri.IsDefaultPort ? 5432 : uri.Port,
+                Username = Uri.UnescapeDataString(userInfo[0]),
+                Database = uri.AbsolutePath.Trim('/'),
+                SslMode = SslMode.Require
+            };
+            if (userInfo.Length > 1)
+                cs.Password = Uri.UnescapeDataString(string.Join(":", userInfo.Skip(1)));
+            options.UseNpgsql(cs.ConnectionString);
+        }
+        else
+        {
+            options.UseNpgsql(databaseUrl); // ja esta em formato chave=valor
+        }
+    }
     else
+    {
         options.UseSqlite("Data Source=portal_central.db");
+    }
 });
 
 // --- Security: JWT ---
@@ -147,11 +181,19 @@ if (string.IsNullOrWhiteSpace(seedPassword))
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
-    if (!db.Users.Any(u => u.Username == seedUsername))
+    try
     {
-        db.Users.Add(new User { Username = seedUsername, PasswordHash = HashPassword(seedPassword), Role = "Admin" });
-        db.SaveChanges();
+        db.Database.EnsureCreated();
+        if (!db.Users.Any(u => u.Username == seedUsername))
+        {
+            db.Users.Add(new User { Username = seedUsername, PasswordHash = HashPassword(seedPassword), Role = "Admin" });
+            db.SaveChanges();
+        }
+    }
+    catch (Exception ex)
+    {
+        // Boot resiliente: portal (SPA + noticias + clima) funciona sem banco; so login depende dele
+        app.Logger.LogError(ex, "Banco indisponivel no boot: {Msg}", ex.Message);
     }
 }
 if (generatedAdminPassword is not null)
