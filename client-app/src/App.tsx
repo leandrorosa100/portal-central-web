@@ -1,4 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
+import AdminPanel from './AdminPanel';
 
 interface NewsItem {
   title: string;
@@ -17,6 +18,10 @@ interface WeatherDetails {
   minTemp: string;
   maxTemp: string;
 }
+
+interface CityItem { id: number; name: string; isPrimary: boolean }
+interface PinnedItem { id: number; title: string; url: string; urlToImage: string | null; description: string | null; sourceName: string | null; pinnedAt: string }
+interface ArticleItem { id: number; title: string; body: string; category: string; author: string; createdAt: string }
 
 const C = {
   dark: '#0f172a',
@@ -40,6 +45,14 @@ const App = () => {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [activeCategory, setActiveCategory] = useState('sports');
   const [loadingNews, setLoadingNews] = useState(true);
+  const [cities, setCities] = useState<CityItem[]>([]);
+  const [weatherMap, setWeatherMap] = useState<Record<string, WeatherDetails>>({});
+  const [pinned, setPinned] = useState<PinnedItem[]>([]);
+  const [articles, setArticles] = useState<ArticleItem[]>([]);
+  const [showArticleModal, setShowArticleModal] = useState(false);
+  const [editingArticle, setEditingArticle] = useState<ArticleItem | null>(null);
+  const [articleForm, setArticleForm] = useState({ title: '', category: '', body: '' });
+  const [articleMsg, setArticleMsg] = useState('');
 
   const iconEmoji = (i: string) => ({
     Clear: '☀️', PartlyCloudy: '⛅', Clouds: '☁️', Fog: '🌫️',
@@ -58,6 +71,9 @@ const App = () => {
     // Initial Fetch
     fetchWeather();
     fetchNews(activeCategory);
+    fetchCitiesAndWeather();
+    fetchPinned();
+    fetchArticles();
 
     return () => { clearInterval(timer); window.removeEventListener('resize', onResize); };
   }, []);
@@ -134,10 +150,102 @@ const App = () => {
     setToken(null); setAuthUser(null);
   };
 
+  // ---------- Admin API helper ----------
+  const authApi = async (path: string, init: RequestInit = {}) => {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        Authorization: `Bearer ${token}`,
+        ...(init.headers || {}),
+      },
+    });
+    if (res.status === 401) { doLogout(); throw new Error('Sessão expirada'); }
+    const data = res.status === 204 ? null : await res.json().catch(() => null);
+    if (!res.ok) throw new Error((data as { message?: string })?.message || `Erro ${res.status}`);
+    return data;
+  };
+
+  const fetchCitiesAndWeather = async () => {
+    let list: CityItem[] = [];
+    try {
+      const res = await fetch(`${API_BASE}/cities`);
+      list = await res.json();
+      if (!Array.isArray(list) || !list.length) list = [{ id: 0, name: 'São Paulo', isPrimary: true }];
+    } catch { list = [{ id: 0, name: 'São Paulo', isPrimary: true }]; }
+    setCities(list);
+    const map: Record<string, WeatherDetails> = {};
+    await Promise.all(list.map(async c => {
+      try {
+        const r = await fetch(`${API_BASE}/weather/current?city=${encodeURIComponent(c.name)}`);
+        const w = await r.json();
+        if (w && w.city) map[c.name] = w;
+      } catch { /* card mostra placeholder */ }
+    }));
+    setWeatherMap(map);
+  };
+
+  const fetchPinned = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/news/pinned`);
+      const list = await res.json();
+      if (Array.isArray(list)) setPinned(list);
+    } catch { /* silencioso */ }
+  };
+
+  const fetchArticles = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/articles`);
+      const list = await res.json();
+      if (Array.isArray(list)) setArticles(list);
+    } catch { /* silencioso */ }
+  };
+
+  const pinNews = async (item: NewsItem) => {
+    try {
+      const list = await authApi('/admin/pins', { method: 'POST', body: JSON.stringify({ title: item.title, url: item.url, urlToImage: item.urlToImage, description: item.description, sourceName: item.sourceName }) });
+      setPinned(list as PinnedItem[]);
+    } catch (e) { console.error(e); }
+  };
+
+  const unpinNews = async (id: number) => {
+    try {
+      const list = await authApi(`/admin/pins/${id}`, { method: 'DELETE' });
+      setPinned(list as PinnedItem[]);
+    } catch (e) { console.error(e); }
+  };
+
+  const openArticleModal = (article: ArticleItem | null) => {
+    setEditingArticle(article);
+    setArticleForm(article ? { title: article.title, category: article.category, body: article.body } : { title: '', category: '', body: '' });
+    setArticleMsg('');
+    setShowArticleModal(true);
+  };
+
+  const saveArticle = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      const list = editingArticle
+        ? await authApi(`/admin/articles/${editingArticle.id}`, { method: 'PUT', body: JSON.stringify(articleForm) })
+        : await authApi('/admin/articles', { method: 'POST', body: JSON.stringify(articleForm) });
+      setArticles(list as ArticleItem[]);
+      setShowArticleModal(false);
+    } catch (e) { setArticleMsg((e as Error).message); }
+  };
+
+  const deleteArticle = async (id: number) => {
+    try {
+      const list = await authApi(`/admin/articles/${id}`, { method: 'DELETE' });
+      setArticles(list as ArticleItem[]);
+    } catch (e) { console.error(e); }
+  };
+
   const sections = [
     { id: 'home', label: 'Início' },
     { id: 'news', label: 'Notícias' },
+    { id: 'editoria', label: 'Portal Original' },
     { id: 'weather', label: 'Clima' },
+    ...(token ? [{ id: 'admin', label: 'Administração' }] : []),
     { id: 'settings', label: 'Configurações' },
   ];
 
@@ -291,6 +399,25 @@ const App = () => {
           {loadingNews ? (
             <div style={{ textAlign: 'center', padding: '40px', color: C.muted }}>Carregando notícias...</div>
           ) : news.length > 0 ? (
+            <>
+            {pinned.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.blue, textTransform: 'uppercase', letterSpacing: '1.5px' }}>📌 Destaques da editoria</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+                  {pinned.map(p => (
+                    <div key={p.id} style={{ position: 'relative', backgroundColor: C.dark, borderRadius: 10, padding: '12px 14px', paddingRight: token ? 34 : 14, border: '1px solid #334155' }}>
+                      <div style={{ fontSize: 10.5, color: C.muted2, marginBottom: 4 }}>{p.sourceName || 'Fixada'}</div>
+                      <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', textDecoration: 'none', lineHeight: 1.35, display: 'block' }}>{p.title}</a>
+                      {token && (
+                        <button onClick={() => unpinNews(p.id)} title="Desfixar" style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', color: C.muted2, cursor: 'pointer', fontSize: 12, padding: 2 }}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
               {/* Featured */}
               <article style={{ backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(15,23,42,.08)' }}>
@@ -299,6 +426,9 @@ const App = () => {
                   <span style={{ position: 'absolute', top: 14, left: 14, backgroundColor: C.blue, color: '#fff', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', padding: '4px 10px', borderRadius: 6 }}>
                     Destaque
                   </span>
+                  {token && (
+                    <button onClick={() => pinNews(news[0])} title="Fixar esta notícia" style={{ position: 'absolute', top: 10, right: 10, zIndex: 5, background: 'rgba(15,23,42,.65)', border: '1px solid #475569', borderRadius: 8, cursor: 'pointer', fontSize: 15, padding: '4px 8px' }}>📌</button>
+                  )}
                 </div>
                 <div style={{ padding: isDesktop ? 24 : 16 }}>
                   <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>
@@ -322,6 +452,7 @@ const App = () => {
                       display: 'flex', flexDirection: 'column', textDecoration: 'none', color: C.text,
                       backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
                       overflow: 'hidden', boxShadow: '0 1px 3px rgba(15,23,42,.06)', transition: 'box-shadow .15s',
+                      position: 'relative',
                     }}
                     onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,.12)'; }}
                     onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(15,23,42,.06)'; }}
@@ -332,10 +463,14 @@ const App = () => {
                       <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{item.title}</div>
                       <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.description}</div>
                     </div>
+                    {token && (
+                      <button onClick={ev => { ev.preventDefault(); ev.stopPropagation(); pinNews(item); }} title="Fixar esta notícia" style={{ position: 'absolute', top: 8, right: 8, zIndex: 5, background: 'rgba(255,255,255,.92)', border: `1px solid ${C.border}`, borderRadius: 8, cursor: 'pointer', fontSize: 13, padding: '3px 7px', boxShadow: '0 1px 3px rgba(15,23,42,.15)' }}>📌</button>
+                    )}
                   </a>
                 ))}
               </div>
             </div>
+            </>
           ) : (
             <div style={{ textAlign: 'center', padding: '40px', color: C.muted }}>Nenhuma notícia encontrada para esta categoria.</div>
           )}
@@ -347,19 +482,62 @@ const App = () => {
             <div style={{ width: 4, height: 24, backgroundColor: C.blue, borderRadius: 2 }} />
             <h2 style={{ fontSize: isDesktop ? 24 : 20, fontWeight: 700, margin: 0 }}>Previsão do tempo</h2>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20 }}>
-            <div style={{
-              backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 14,
-              padding: isDesktop ? 32 : 24, textAlign: 'center',
-              boxShadow: '0 1px 3px rgba(15,23,42,.08)', borderTop: `3px solid ${C.blue}`,
-            }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 12 }}>Hoje · {weather.city || 'São Paulo'}</div>
-              <div style={{ fontSize: 44, marginBottom: 8 }}>{iconEmoji(weather.icon)}</div>
-              <div style={{ fontSize: isDesktop ? 40 : 34, fontWeight: 800, color: C.text }}>{weather.temp}</div>
-              <div style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>{weather.condition}</div>
-              <div style={{ fontSize: 12.5, color: C.muted2, marginTop: 12 }}>Máx {weather.maxTemp} · Mín {weather.minTemp}</div>
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 20 }}>
+            {cities.map(c => {
+              const w = weatherMap[c.name];
+              return (
+                <div key={c.id} style={{
+                  backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 14,
+                  padding: isDesktop ? 28 : 20, textAlign: 'center',
+                  boxShadow: '0 1px 3px rgba(15,23,42,.08)', borderTop: `3px solid ${c.isPrimary ? C.blue : C.border}`,
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 12 }}>{c.isPrimary ? 'Hoje · ' : ''}{w?.city || c.name}</div>
+                  <div style={{ fontSize: 40, marginBottom: 8 }}>{w ? iconEmoji(w.icon) : '⏳'}</div>
+                  <div style={{ fontSize: 34, fontWeight: 800, color: C.text }}>{w?.temp || '--°'}</div>
+                  <div style={{ fontSize: 14, color: C.muted, marginTop: 4 }}>{w?.condition || 'Carregando...'}</div>
+                  <div style={{ fontSize: 12.5, color: C.muted2, marginTop: 12 }}>Máx {w?.maxTemp || '--'} · Mín {w?.minTemp || '--'}</div>
+                </div>
+              );
+            })}
           </div>
+        </section>
+
+        {/* EDITORIA */}
+        <section id="editoria" style={{ paddingTop: 56 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 4, height: 24, backgroundColor: C.blue, borderRadius: 2 }} />
+              <h2 style={{ fontSize: isDesktop ? 24 : 20, fontWeight: 700, margin: 0 }}>Portal Original</h2>
+            </div>
+            {token && (
+              <button onClick={() => openArticleModal(null)} style={{ padding: '9px 18px', backgroundColor: C.blue, border: 'none', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Nova matéria</button>
+            )}
+          </div>
+          {articles.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+              {articles.map(a => (
+                <div key={a.id} style={{ position: 'relative', backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, boxShadow: '0 1px 3px rgba(15,23,42,.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: C.blue, textTransform: 'uppercase', letterSpacing: '1px', backgroundColor: '#eff6ff', padding: '3px 8px', borderRadius: 6 }}>{a.category}</span>
+                    <span style={{ fontSize: 11, color: C.muted2 }}>{new Date(a.createdAt).toLocaleDateString('pt-BR')}</span>
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.35 }}>{a.title}</div>
+                  <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.body}</div>
+                  <div style={{ fontSize: 11.5, color: C.muted2, marginTop: 'auto' }}>por {a.author}</div>
+                  {token && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                      <button onClick={() => openArticleModal(a)} style={{ padding: '5px 10px', backgroundColor: '#fff', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>editar</button>
+                      <button onClick={() => deleteArticle(a.id)} style={{ padding: '5px 10px', backgroundColor: '#fff', border: `1px solid ${C.border}`, color: '#dc2626', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>excluir</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 28, textAlign: 'center', color: C.muted, fontSize: 14 }}>
+              Ainda não há matérias originais. {token ? 'Clique em “+ Nova matéria” para começar.' : 'Em breve: conteúdo produzido pela nossa editoria.'}
+            </div>
+          )}
         </section>
 
         {/* SETTINGS */}
@@ -396,6 +574,17 @@ const App = () => {
             </div>
           </div>
         </section>
+
+        {/* ADMIN */}
+        {token && (
+          <section id="admin" style={{ paddingTop: 56 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+              <div style={{ width: 4, height: 24, backgroundColor: C.blue, borderRadius: 2 }} />
+              <h2 style={{ fontSize: isDesktop ? 24 : 20, fontWeight: 700, margin: 0 }}>Administração</h2>
+            </div>
+            <AdminPanel token={token} cities={cities} onCitiesChanged={fetchCitiesAndWeather} onAuthFail={doLogout} />
+          </section>
+        )}
       </main>
 
       {/* LOGIN MODAL */}
@@ -434,8 +623,48 @@ const App = () => {
         </div>
       )}
 
+      {/* ARTICLE MODAL */}
+      {showArticleModal && (
+        <div onClick={() => setShowArticleModal(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: 16, padding: isDesktop ? 32 : 24, width: 'min(520px, 100%)', maxHeight: '86vh', overflowY: 'auto', boxSizing: 'border-box', boxShadow: '0 20px 50px rgba(15,23,42,.3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{editingArticle ? 'Editar matéria' : 'Nova matéria'}</h3>
+              <button onClick={() => setShowArticleModal(false)} aria-label="Fechar" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
+            </div>
+            <div style={{ fontSize: 13, color: C.muted, marginBottom: 18 }}>Editoria do Portal Original · autoria: {authUser}</div>
+            <form onSubmit={saveArticle}>
+              <input
+                value={articleForm.title}
+                onChange={e => setArticleForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="Título"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: 12, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: 'none' }}
+              />
+              <input
+                value={articleForm.category}
+                onChange={e => setArticleForm(f => ({ ...f, category: e.target.value }))}
+                placeholder="Categoria (ex.: Tecnologia)"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: 12, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: 'none' }}
+              />
+              <textarea
+                value={articleForm.body}
+                onChange={e => setArticleForm(f => ({ ...f, body: e.target.value }))}
+                placeholder="Escreva a matéria..."
+                rows={7}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: 16, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: 'none', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 }}
+              />
+              {articleMsg && <div style={{ fontSize: 13, color: '#dc2626', marginBottom: 12 }}>{articleMsg}</div>}
+              <button type="submit" style={{ width: '100%', padding: '12px 0', backgroundColor: C.blue, color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                {editingArticle ? 'Salvar alterações' : 'Publicar matéria'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       <footer style={{ backgroundColor: C.dark, padding: '28px 16px', textAlign: 'center' }}>
-        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v1.3.0</div>
+        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v2.0.0</div>
       </footer>
     </div>
   );
