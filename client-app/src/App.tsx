@@ -75,6 +75,17 @@ const App = () => {
     fetchPinned();
     fetchArticles();
 
+    // Sessao restaurada sem papel? busca no /me (e sai se o token morreu)
+    if (localStorage.getItem('pc_token') && !localStorage.getItem('pc_role')) {
+      fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ***` } })
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => {
+          if (d?.role) { setAuthRole(d.role); localStorage.setItem('pc_role', d.role); }
+          else if (d === null) { doLogout(); }
+        })
+        .catch(() => {});
+    }
+
     return () => { clearInterval(timer); window.removeEventListener('resize', onResize); };
   }, []);
 
@@ -110,6 +121,7 @@ const App = () => {
   // ---------- Auth ----------
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('pc_token'));
   const [authUser, setAuthUser] = useState<string | null>(() => localStorage.getItem('pc_user'));
+  const [authRole, setAuthRole] = useState<string | null>(() => localStorage.getItem('pc_role'));
   const [showLogin, setShowLogin] = useState(false);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -131,7 +143,8 @@ const App = () => {
         const data = await res.json();
         localStorage.setItem('pc_token', data.token);
         localStorage.setItem('pc_user', data.username);
-        setToken(data.token); setAuthUser(data.username);
+        localStorage.setItem('pc_role', data.role || '');
+        setToken(data.token); setAuthUser(data.username); setAuthRole(data.role || '');
         setShowLogin(false);
       } else if (res.status === 429) {
         setLoginError('Muitas tentativas. Aguarde um minuto e tente novamente.');
@@ -146,8 +159,8 @@ const App = () => {
   };
 
   const doLogout = () => {
-    localStorage.removeItem('pc_token'); localStorage.removeItem('pc_user');
-    setToken(null); setAuthUser(null);
+    localStorage.removeItem('pc_token'); localStorage.removeItem('pc_user'); localStorage.removeItem('pc_role');
+    setToken(null); setAuthUser(null); setAuthRole(null);
   };
 
   // ---------- Admin API helper ----------
@@ -240,12 +253,14 @@ const App = () => {
     } catch (e) { console.error(e); }
   };
 
+  const isAdmin = authRole === 'Admin';
+
   const sections = [
     { id: 'home', label: 'Início' },
     { id: 'news', label: 'Notícias' },
     { id: 'editoria', label: 'Portal Original' },
     { id: 'weather', label: 'Clima' },
-    ...(token ? [{ id: 'admin', label: 'Administração' }] : []),
+    ...(token && isAdmin ? [{ id: 'admin', label: 'Administração' }] : []),
     { id: 'settings', label: 'Configurações' },
   ];
 
@@ -410,7 +425,7 @@ const App = () => {
                     <div key={p.id} style={{ position: 'relative', backgroundColor: C.dark, borderRadius: 10, padding: '12px 14px', paddingRight: token ? 34 : 14, border: '1px solid #334155' }}>
                       <div style={{ fontSize: 10.5, color: C.muted2, marginBottom: 4 }}>{p.sourceName || 'Fixada'}</div>
                       <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', textDecoration: 'none', lineHeight: 1.35, display: 'block' }}>{p.title}</a>
-                      {token && (
+                      {isAdmin && (
                         <button onClick={() => unpinNews(p.id)} title="Desfixar" style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', color: C.muted2, cursor: 'pointer', fontSize: 12, padding: 2 }}>✕</button>
                       )}
                     </div>
@@ -426,7 +441,7 @@ const App = () => {
                   <span style={{ position: 'absolute', top: 14, left: 14, backgroundColor: C.blue, color: '#fff', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', padding: '4px 10px', borderRadius: 6 }}>
                     Destaque
                   </span>
-                  {token && (
+                  {isAdmin && (
                     <button onClick={() => pinNews(news[0])} title="Fixar esta notícia" style={{ position: 'absolute', top: 10, right: 10, zIndex: 5, background: 'rgba(15,23,42,.65)', border: '1px solid #475569', borderRadius: 8, cursor: 'pointer', fontSize: 15, padding: '4px 8px' }}>📌</button>
                   )}
                 </div>
@@ -463,7 +478,7 @@ const App = () => {
                       <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{item.title}</div>
                       <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.description}</div>
                     </div>
-                    {token && (
+                    {isAdmin && (
                       <button onClick={ev => { ev.preventDefault(); ev.stopPropagation(); pinNews(item); }} title="Fixar esta notícia" style={{ position: 'absolute', top: 8, right: 8, zIndex: 5, background: 'rgba(255,255,255,.92)', border: `1px solid ${C.border}`, borderRadius: 8, cursor: 'pointer', fontSize: 13, padding: '3px 7px', boxShadow: '0 1px 3px rgba(15,23,42,.15)' }}>📌</button>
                     )}
                   </a>
@@ -509,7 +524,7 @@ const App = () => {
               <div style={{ width: 4, height: 24, backgroundColor: C.blue, borderRadius: 2 }} />
               <h2 style={{ fontSize: isDesktop ? 24 : 20, fontWeight: 700, margin: 0 }}>Portal Original</h2>
             </div>
-            {token && (
+            {isAdmin && (
               <button onClick={() => openArticleModal(null)} style={{ padding: '9px 18px', backgroundColor: C.blue, border: 'none', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Nova matéria</button>
             )}
           </div>
@@ -524,7 +539,7 @@ const App = () => {
                   <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.35 }}>{a.title}</div>
                   <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.body}</div>
                   <div style={{ fontSize: 11.5, color: C.muted2, marginTop: 'auto' }}>por {a.author}</div>
-                  {token && (
+                  {isAdmin && (
                     <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
                       <button onClick={() => openArticleModal(a)} style={{ padding: '5px 10px', backgroundColor: '#fff', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>editar</button>
                       <button onClick={() => deleteArticle(a.id)} style={{ padding: '5px 10px', backgroundColor: '#fff', border: `1px solid ${C.border}`, color: '#dc2626', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>excluir</button>
@@ -555,7 +570,7 @@ const App = () => {
                     <div style={{ width: 36, height: 36, borderRadius: '50%', backgroundColor: '#16a34a', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>{(authUser || 'U').slice(0, 2).toUpperCase()}</div>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600 }}>{authUser}</div>
-                      <div style={{ fontSize: 12, color: C.muted }}>Administrador · token JWT ativo</div>
+                      <div style={{ fontSize: 12, color: C.muted }}>{isAdmin ? 'Administrador' : 'Editor'} · token JWT ativo</div>
                     </div>
                   </div>
                   <button onClick={doLogout} style={{ padding: '8px 18px', backgroundColor: '#fff', border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Sair</button>
@@ -576,7 +591,7 @@ const App = () => {
         </section>
 
         {/* ADMIN */}
-        {token && (
+        {token && isAdmin && (
           <section id="admin" style={{ paddingTop: 56 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
               <div style={{ width: 4, height: 24, backgroundColor: C.blue, borderRadius: 2 }} />
@@ -664,7 +679,7 @@ const App = () => {
       )}
 
       <footer style={{ backgroundColor: C.dark, padding: '28px 16px', textAlign: 'center' }}>
-        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v2.1.0</div>
+        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v2.1.1</div>
       </footer>
     </div>
   );

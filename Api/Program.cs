@@ -264,6 +264,10 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["X-Frame-Options"] = "DENY";
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    // index.html sempre fresco (evita bundle velho no cache do navegador); assets sao fingerprintados
+    var path = context.Request.Path;
+    if (!path.StartsWithSegments("/api") && (path == "/" || path.Value?.EndsWith(".html", StringComparison.OrdinalIgnoreCase) == true))
+        context.Response.Headers["Cache-Control"] = "no-cache";
     // Scalar's UI needs an inline bootstrap script + its doc served from a relative path.
     // Keep the strict policy for the app; relax script-src only for the docs pages.
     var isScalarPage = context.Request.Path.StartsWithSegments("/scalar");
@@ -319,7 +323,7 @@ app.MapPost("/api/auth/login", async (LoginRequest request, AppDbContext db) =>
         SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)), SecurityAlgorithms.HmacSha256Signature)
     };
     var token = tokenHandler.CreateToken(tokenDescriptor);
-    return Results.Ok(new { token = tokenHandler.WriteToken(token), username = user.Username });
+    return Results.Ok(new { token = tokenHandler.WriteToken(token), username = user.Username, role = user.Role });
 }).RequireRateLimiting("login");
 
 app.MapGet("/api/auth/me", (ClaimsPrincipal user) =>

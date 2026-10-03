@@ -21,6 +21,7 @@ const C = {
 const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [cityError, setCityError] = useState('');
   const [cityQuery, setCityQuery] = useState('');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<CitySuggestion[]>([]);
@@ -40,6 +41,7 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
       },
     });
     if (res.status === 401) { onAuthFail(); throw new Error('Sessão expirada — entre novamente'); }
+    if (res.status === 403) throw new Error('Seu usuário não tem permissão de administrador.');
     const data = res.status === 204 ? null : await res.json().catch(() => null);
     if (!res.ok) throw new Error((data as { message?: string })?.message || `Erro ${res.status}`);
     return data;
@@ -66,6 +68,7 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
     setCityQuery(value);
     setSelectedCity(null); // qualquer digitacao invalida a selecao anterior
     setShowSuggest(true);
+    setCityError('');
     if (suggestTimer.current) clearTimeout(suggestTimer.current);
     if (value.trim().length < 2) { setSuggestions([]); return; }
     suggestTimer.current = setTimeout(async () => {
@@ -73,9 +76,11 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
         const res = await fetch(`/api/cities/suggest?q=${encodeURIComponent(value.trim())}`, {
           headers: { Authorization: `Bearer ***}` },
         });
+        if (res.status === 403) { setCityError('Seu usuário não tem permissão de administrador.'); setSuggestions([]); return; }
         const list = res.ok ? await res.json() : [];
         setSuggestions(Array.isArray(list) ? list : []);
-      } catch { setSuggestions([]); }
+        if (Array.isArray(list) && list.length === 0) setCityError('Nenhuma cidade encontrada com esse nome.');
+      } catch { setSuggestions([]); setCityError('Não foi possível buscar sugestões agora.'); }
     }, 300);
   };
 
@@ -84,23 +89,31 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
     setCityQuery(s.name);
     setSuggestions([]);
     setShowSuggest(false);
-    setMsg('');
+    setCityError('');
+  };
+
+  const onCityKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && suggestions.length > 0) {
+      e.preventDefault();
+      pickCity(suggestions[0]);
+    }
   };
 
   const addCity = async (e: FormEvent) => {
     e.preventDefault();
     if (busy) return;
     if (!selectedCity || cityQuery !== selectedCity) {
-      setMsg('Selecione uma cidade válida na lista de sugestões (digite e clique em uma opção).');
+      setCityError('Selecione uma cidade válida na lista que aparece enquanto digita.');
+      setShowSuggest(true);
       return;
     }
-    setBusy(true); setMsg('');
+    setBusy(true); setMsg(''); setCityError('');
     try {
       await api('/admin/cities', { method: 'POST', body: JSON.stringify({ name: selectedCity, isPrimary: false }) });
       setCityQuery(''); setSelectedCity(null); setSuggestions([]);
       onCitiesChanged();
       refreshStats();
-    } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setCityError((e as Error).message); } finally { setBusy(false); }
   };
 
   const removeCity = async (id: number) => {
@@ -178,8 +191,9 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
                 onChange={e => onCityQueryChange(e.target.value)}
                 onFocus={() => { if (cityQuery.trim().length >= 2) setShowSuggest(true); }}
                 onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
+                onKeyDown={onCityKeyDown}
                 placeholder="Ex.: São Paulo, Lisboa..."
-                style={inputStyle}
+                style={{ ...inputStyle, borderColor: cityError ? '#dc2626' : C.border }}
                 autoComplete="off"
               />
               {showSuggest && suggestions.length > 0 && (
@@ -204,8 +218,8 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
             </div>
             <button type="submit" disabled={busy} style={{ ...btnBlue, padding: '10px 18px' }}>Adicionar</button>
           </form>
-          <div style={{ fontSize: 11.5, color: C.muted2, marginTop: 8 }}>
-            {selectedCity ? `✓ ${selectedCity} selecionada` : 'Digite pelo menos 2 letras e escolha uma cidade na lista.'}
+          <div style={{ fontSize: 11.5, marginTop: 8, color: cityError ? '#dc2626' : C.muted2, fontWeight: cityError ? 600 : 400 }}>
+            {cityError || (selectedCity ? `✓ ${selectedCity} selecionada` : 'Digite pelo menos 2 letras e escolha uma cidade na lista.')}
           </div>
         </div>
 
