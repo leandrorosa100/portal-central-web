@@ -184,19 +184,24 @@ if (string.IsNullOrWhiteSpace(seedPassword))
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    try
+    for (var attempt = 1; attempt <= 3; attempt++)
     {
-        db.Database.EnsureCreated();
-        if (!db.Users.Any(u => u.Username == seedUsername))
+        try
         {
-            db.Users.Add(new User { Username = seedUsername, PasswordHash = HashPassword(seedPassword), Role = "Admin" });
-            db.SaveChanges();
+            db.Database.EnsureCreated();
+            if (!db.Users.Any(u => u.Username == seedUsername))
+            {
+                db.Users.Add(new User { Username = seedUsername, PasswordHash = HashPassword(seedPassword), Role = "Admin" });
+                db.SaveChanges();
+            }
+            app.Logger.LogInformation("Banco pronto na tentativa {N}: schema verificado e admin garantido", attempt);
+            break;
         }
-    }
-    catch (Exception ex)
-    {
-        // Boot resiliente: portal (SPA + noticias + clima) funciona sem banco; so login depende dele
-        app.Logger.LogError(ex, "Banco indisponivel no boot: {Msg}", ex.Message);
+        catch (Exception ex)
+        {
+            app.Logger.LogError(ex, "Banco indisponivel no boot (tentativa {N}/3): {Msg}", attempt, RedactDb(ex.Message, dbPasswordForRedaction));
+            if (attempt < 3) await Task.Delay(TimeSpan.FromSeconds(10));
+        }
     }
 }
 if (generatedAdminPassword is not null)
