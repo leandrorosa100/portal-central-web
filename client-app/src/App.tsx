@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 
 interface NewsItem {
   title: string;
@@ -91,6 +91,49 @@ const App = () => {
 
   const isDesktop = width >= 768;
 
+  // ---------- Auth ----------
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('pc_token'));
+  const [authUser, setAuthUser] = useState<string | null>(() => localStorage.getItem('pc_user'));
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginError, setLoginError] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+
+  const openLogin = () => { setLoginError(''); setLoginForm({ username: '', password: '' }); setShowLogin(true); };
+
+  const doLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    if (loginBusy) return;
+    setLoginBusy(true); setLoginError('');
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginForm),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem('pc_token', data.token);
+        localStorage.setItem('pc_user', data.username);
+        setToken(data.token); setAuthUser(data.username);
+        setShowLogin(false);
+      } else if (res.status === 429) {
+        setLoginError('Muitas tentativas. Aguarde um minuto e tente novamente.');
+      } else {
+        setLoginError('Usuário ou senha inválidos.');
+      }
+    } catch {
+      setLoginError('Falha de conexão. Tente novamente.');
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  const doLogout = () => {
+    localStorage.removeItem('pc_token'); localStorage.removeItem('pc_user');
+    setToken(null); setAuthUser(null);
+  };
+
   const sections = [
     { id: 'home', label: 'Início' },
     { id: 'news', label: 'Notícias' },
@@ -134,6 +177,14 @@ const App = () => {
           <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13, color: '#93c5fd', fontWeight: 600, whiteSpace: 'nowrap', padding: '5px 10px', backgroundColor: C.dark2, borderRadius: 8, border: '1px solid #334155' }}>
             {time}
           </div>
+          {token ? (
+            <button onClick={() => document.getElementById('settings')?.scrollIntoView({ behavior: 'smooth' })} title={`Sessão: ${authUser}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', backgroundColor: C.dark2, borderRadius: 8, border: '1px solid #334155', cursor: 'pointer' }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 700 }}>{(authUser || 'U').slice(0, 2).toUpperCase()}</div>
+              {isDesktop && <span style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>{authUser}</span>}
+            </button>
+          ) : (
+            <button onClick={openLogin} style={{ padding: '6px 16px', backgroundColor: C.blue, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Entrar</button>
+          )}
         </div>
       </header>
 
@@ -169,13 +220,20 @@ const App = () => {
           ))}
         </nav>
         <div style={{ marginTop: 'auto', padding: 16, borderTop: '1px solid #1e293b' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: '50%', backgroundColor: C.blue, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>AD</div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>admin</div>
-              <div style={{ fontSize: 11, color: C.muted2 }}>Administrador</div>
+          {token ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <div style={{ width: 34, height: 34, borderRadius: '50%', backgroundColor: '#16a34a', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{(authUser || 'U').slice(0, 2).toUpperCase()}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis' }}>{authUser}</div>
+                  <div style={{ fontSize: 11, color: '#4ade80' }}>● Sessão ativa</div>
+                </div>
+              </div>
+              <button onClick={doLogout} style={{ background: 'none', border: '1px solid #475569', color: '#cbd5e1', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Sair</button>
             </div>
-          </div>
+          ) : (
+            <button onClick={() => { setIsMenuOpen(false); openLogin(); }} style={{ width: '100%', padding: '10px 0', backgroundColor: C.blue, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Entrar</button>
+          )}
         </div>
       </div>
 
@@ -304,10 +362,81 @@ const App = () => {
             </div>
           </div>
         </section>
+
+        {/* SETTINGS */}
+        <section id="settings" style={{ paddingTop: 56 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <div style={{ width: 4, height: 24, backgroundColor: C.blue, borderRadius: 2 }} />
+            <h2 style={{ fontSize: isDesktop ? 24 : 20, fontWeight: 700, margin: 0 }}>Configurações</h2>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? '1fr 1fr' : '1fr', gap: 20 }}>
+            <div style={{ backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, boxShadow: '0 1px 3px rgba(15,23,42,.08)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 14 }}>Sessão</div>
+              {token ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: '50%', backgroundColor: '#16a34a', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>{(authUser || 'U').slice(0, 2).toUpperCase()}</div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{authUser}</div>
+                      <div style={{ fontSize: 12, color: C.muted }}>Administrador · token JWT ativo</div>
+                    </div>
+                  </div>
+                  <button onClick={doLogout} style={{ padding: '8px 18px', backgroundColor: '#fff', border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Sair</button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 14, color: C.muted, marginBottom: 14 }}>Acesse o painel com sua conta de administrador.</div>
+                  <button onClick={openLogin} style={{ padding: '10px 22px', backgroundColor: C.blue, border: 'none', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Entrar</button>
+                </div>
+              )}
+            </div>
+            <div style={{ backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, boxShadow: '0 1px 3px rgba(15,23,42,.08)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.blue, textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 14 }}>Documentação</div>
+              <div style={{ fontSize: 14, color: C.muted, marginBottom: 14 }}>Referência interativa dos endpoints da API (OpenAPI/Scalar).</div>
+              <a href="/scalar" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', padding: '10px 22px', border: `1px solid ${C.blue}`, color: C.blue, borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Abrir /scalar →</a>
+            </div>
+          </div>
+        </section>
       </main>
 
+      {/* LOGIN MODAL */}
+      {showLogin && (
+        <div onClick={() => setShowLogin(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: 16, padding: isDesktop ? 32 : 24, width: 'min(400px, 100%)', boxSizing: 'border-box', boxShadow: '0 20px 50px rgba(15,23,42,.3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Entrar</h3>
+              <button onClick={() => setShowLogin(false)} aria-label="Fechar" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
+            </div>
+            <div style={{ fontSize: 13, color: C.muted, marginBottom: 18 }}>Autenticação JWT · Portal Central</div>
+            <form onSubmit={doLogin}>
+              <input
+                value={loginForm.username}
+                onChange={e => setLoginForm(f => ({ ...f, username: e.target.value }))}
+                placeholder="Usuário"
+                autoComplete="username"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: 12, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: 'none' }}
+              />
+              <input
+                type="password"
+                value={loginForm.password}
+                onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))}
+                placeholder="Senha"
+                autoComplete="current-password"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: 16, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 14, outline: 'none' }}
+              />
+              {loginError && <div style={{ fontSize: 13, color: '#dc2626', marginBottom: 12 }}>{loginError}</div>}
+              <button type="submit" disabled={loginBusy} style={{ width: '100%', padding: '12px 0', backgroundColor: loginBusy ? C.muted2 : C.blue, color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: loginBusy ? 'default' : 'pointer' }}>
+                {loginBusy ? 'Verificando...' : 'Entrar'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       <footer style={{ backgroundColor: C.dark, padding: '28px 16px', textAlign: 'center' }}>
-        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v1.1.0</div>
+        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v1.2.0</div>
       </footer>
     </div>
   );

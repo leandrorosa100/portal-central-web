@@ -4,6 +4,16 @@ Portal de notícias e clima em tempo real — notícias via RSS de portais brasi
 
 **Stack:** React 19 + Vite (frontend) · .NET 10 Web API (backend) · SQLite/EF Core (persistência) · JWT (autenticação)
 
+## Funcionalidades
+
+- **Portal one-page responsivo** — notícias por categoria, clima em tempo real, menu lateral mobile
+- **Login JWT na UI** — modal de autenticação (`Entrar` no header/drawer), sessão persistida em `localStorage`, logout
+- **Senhas com PBKDF2-SHA256** — salt por usuário, 100k iterações, comparação em tempo constante (nunca texto puro)
+- **Rate limiting** — 5 tentativas de login/min por IP (429 após exceder)
+- **Documentação interativa** — Scalar UI em `/scalar` + OpenAPI em `/openapi/v1.json` (todos os ambientes)
+- **Headers de segurança** — CSP, X-Frame-Options, nosniff, Referrer-Policy
+- **HTTPS forçado** — via proxy reverso (Render) com `ForwardedHeaders`
+
 ## Rodar localmente
 
 ```bash
@@ -30,11 +40,21 @@ npm run dev
 
 ## Variáveis de ambiente
 
-| Variável | Padrão (dev) | Descrição |
+| Variável | Padrão (dev) | Comportamento em produção sem a variável |
 |---|---|---|
-| `PORT` | `5001` | Porta do servidor (o Render define automaticamente) |
-| `JWT_KEY` | chave dev-only | **Defina em produção** — segredo de assinatura dos tokens |
-| `ADMIN_USERNAME` | `admin` | Usuário admin criado no primeiro boot |
-| `ADMIN_PASSWORD` | `Admin@123` | **Defina em produção** — senha do admin inicial |
+| `PORT` | `5001` | Definido automaticamente pelo Render |
+| `JWT_KEY` | chave dev-only | Gera chave **efêmera aleatória** (sessões caem a cada restart) |
+| `ADMIN_USERNAME` | `admin` | `admin` |
+| `ADMIN_PASSWORD` | `Admin@123` | Gera senha **aleatória de uso único** (visível só nos logs do serviço) |
 
-No Render: **Environment** → adicione `JWT_KEY` e `ADMIN_PASSWORD` com valores fortes.
+No Render: **Environment** → adicione `JWT_KEY` (texto longo aleatório, 40+ caracteres) e `ADMIN_PASSWORD` (senha forte sua). Sem elas o app **nunca** aceita a senha dev — é a proteção fail-safe contra segredos públicos em repositório aberto.
+
+## Endpoints
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/news/headlines?category=` | Manchetes RSS (sports, politics, games, technology, innovation) |
+| GET | `/api/weather/current` | Clima atual via Open-Meteo (São Paulo) |
+| POST | `/api/auth/login` | Login → `{ token, username }` (rate-limited) |
+| GET | `/api/auth/me` | Dados da sessão (requer `Authorization: Bearer <token>`) |
+| GET | `/scalar`, `/openapi/v1.json` | Documentação interativa da API |
