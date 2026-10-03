@@ -76,8 +76,15 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
       setCitySearching(true);
       try {
         const res = await fetch(`/api/cities/suggest?q=${encodeURIComponent(value.trim())}`, {
-          headers: { Authorization: `Bearer ***}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
+        if (res.status === 401) { 
+          onAuthFail(); 
+          setSuggestions([]); 
+          setCityError('Sessão expirada. Por favor, entre novamente.'); 
+          setCitySearching(false); 
+          return; 
+        }
         if (res.status === 403) { setCityError('Seu usuário não tem permissão de administrador.'); setSuggestions([]); setCitySearching(false); return; }
         const list = res.ok ? await res.json() : [];
         setSuggestions(Array.isArray(list) ? list : []);

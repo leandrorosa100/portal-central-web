@@ -77,7 +77,7 @@ const App = () => {
 
     // Sessao restaurada sem papel? busca no /me (e sai se o token morreu)
     if (localStorage.getItem('pc_token') && !localStorage.getItem('pc_role')) {
-      fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ***` } })
+      fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${localStorage.getItem('pc_token')}` } })
         .then(r => (r.ok ? r.json() : null))
         .then(d => {
           if (d?.role) { setAuthRole(d.role); localStorage.setItem('pc_role', d.role); }

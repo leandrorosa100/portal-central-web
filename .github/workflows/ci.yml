@@ -1,0 +1,40 @@
+name: CI Frontend
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  ci-frontend:
+    name: tsc + oxlint + guard de credenciais
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client-app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependências (npm ci)
+        run: npm ci
+
+      - name: Compilar TypeScript (tsc -b)
+        run: npx tsc -b
+
+      - name: Lint (oxlint)
+        run: npx oxlint
+
+      - name: Guard — credencial corrompida no fonte
+        run: |
+          if grep -rn 'Bearer [*][*]' src/; then
+            echo "::error::Literal de credencial corrompido ('Bearer **') encontrado no fonte"
+            exit 1
+          fi
+          echo "OK — nenhuma credencial corrompida em client-app/src"
