@@ -58,9 +58,15 @@ if (string.IsNullOrWhiteSpace(jwtKey))
 var jwtIssuer = "PortalCentral";
 var jwtAudience = "PortalCentralUsers";
 
-// --- Database ---
+// --- Database: PostgreSQL (Supabase) em producao, SQLite local em dev ---
+var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=neon_app.db"));
+{
+    if (!string.IsNullOrWhiteSpace(databaseUrl))
+        options.UseNpgsql(databaseUrl);
+    else
+        options.UseSqlite("Data Source=portal_central.db");
+});
 
 // --- Security: JWT ---
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
