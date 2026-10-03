@@ -68,38 +68,41 @@ if (!string.IsNullOrWhiteSpace(databaseUrl))
     if (File.Exists(databaseUrl))
         databaseUrl = File.ReadAllText(databaseUrl).Trim();
 }
-builder.Services.AddDbContext<AppDbContext>(options =>
+string npgsqlConnectionString = string.Empty;
+string? dbPasswordForRedaction = null;
+if (!string.IsNullOrWhiteSpace(databaseUrl))
 {
-    if (!string.IsNullOrWhiteSpace(databaseUrl))
+    if (databaseUrl.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        databaseUrl.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
     {
-        if (databaseUrl.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
-            databaseUrl.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        // NpgsqlConnectionStringBuilder nao aceita URI nesse caminho: converter para
+        // formato chave=valor manualmente (torna tolerante a espacos/percent-encoding)
+        var uri = new Uri(databaseUrl);
+        var userInfo = uri.UserInfo.Split(':');
+        var cs = new NpgsqlConnectionStringBuilder
         {
-            // NpgsqlConnectionStringBuilder nao aceita URI nesse caminho: converter para
-            // formato chave=valor manualmente (torna tolerante a espacos/percent-encoding)
-            var uri = new Uri(databaseUrl);
-            var userInfo = uri.UserInfo.Split(':');
-            var cs = new NpgsqlConnectionStringBuilder
-            {
-                Host = uri.Host,
-                Port = uri.IsDefaultPort ? 5432 : uri.Port,
-                Username = Uri.UnescapeDataString(userInfo[0]),
-                Database = uri.AbsolutePath.Trim('/'),
-                SslMode = SslMode.Require
-            };
-            if (userInfo.Length > 1)
-                cs.Password = Uri.UnescapeDataString(string.Join(":", userInfo.Skip(1)));
-            options.UseNpgsql(cs.ConnectionString);
-        }
-        else
-        {
-            options.UseNpgsql(databaseUrl); // ja esta em formato chave=valor
-        }
+            Host = uri.Host,
+            Port = uri.IsDefaultPort ? 5432 : uri.Port,
+            Username = Uri.UnescapeDataString(userInfo[0]),
+            Database = uri.AbsolutePath.Trim('/'),
+            SslMode = SslMode.Require
+        };
+        if (userInfo.Length > 1)
+            cs.Password = Uri.UnescapeDataString(string.Join(":", userInfo.Skip(1)));
+        npgsqlConnectionString = cs.ConnectionString;
+        dbPasswordForRedaction = cs.Password;
     }
     else
     {
-        options.UseSqlite("Data Source=portal_central.db");
+        npgsqlConnectionString = databaseUrl; // ja esta em formato chave=valor
     }
+}
+builder.Services.AddDbContext<AppDbContext>(options =>
+{
+    if (!string.IsNullOrWhiteSpace(npgsqlConnectionString))
+        options.UseNpgsql(npgsqlConnectionString);
+    else
+        options.UseSqlite("Data Source=portal_central.db");
 });
 
 // --- Security: JWT ---
@@ -270,6 +273,48 @@ app.MapPost("/api/auth/login", async (LoginRequest request, AppDbContext db) =>
 app.MapGet("/api/auth/me", (ClaimsPrincipal user) =>
     Results.Ok(new { username = user.Identity?.Name, role = user.FindFirst(ClaimTypes.Role)?.Value }))
     .RequireAuthorization();
+
+// Diagnostico do banco (demo): expoe so estrutura e codigo do erro, nunca credenciais
+static string RedactDb(string msg, string? pw)
+{
+    if (!string.IsNullOrEmpty(pw) && msg.Contains(pw, StringComparison.Ordinal))
+        msg = msg.Replace(pw, "***");
+    return msg.Length > 400 ? msg[..400] : msg;
+}
+
+app.MapGet("/api/db/health", async (AppDbContext db) =>
+{
+    var hasUrl = !string.IsNullOrWhiteSpace(databaseUrl);
+    var r = new Dictionary<string, object?>
+    {
+        ["mode"] = hasUrl ? "postgresql" : "sqlite",
+        ["format_uri"] = hasUrl && databaseUrl!.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase),
+        ["host_is_pooler"] = hasUrl && databaseUrl!.Contains("pooler.supabase.com", StringComparison.OrdinalIgnoreCase),
+        ["host_is_direct"] = hasUrl && databaseUrl!.Contains(".supabase.co", StringComparison.OrdinalIgnoreCase),
+        ["username_has_tenant"] = hasUrl && databaseUrl!.Contains("postgres.", StringComparison.Ordinal),
+    };
+    try
+    {
+        await db.Database.OpenConnectionAsync();
+        r["can_connect"] = true;
+        try { r["users_table"] = await db.Users.AnyAsync(); }
+        catch (Exception ex2) { r["users_table_error"] = RedactDb(ex2.Message, dbPasswordForRedaction); }
+        db.Database.CloseConnection();
+    }
+    catch (Exception ex)
+    {
+        r["can_connect"] = false;
+        var sb = new StringBuilder(ex.Message);
+        var inner = ex.InnerException;
+        for (var d = 0; inner is not null && d < 2; d++)
+        {
+            sb.Append(" | inner: ").Append(inner.Message);
+            inner = inner.InnerException;
+        }
+        r["error"] = RedactDb(sb.ToString(), dbPasswordForRedaction);
+    }
+    return Results.Ok(r);
+});
 
 // SPA fallback: any non-API route serves the React app
 app.MapFallbackToFile("index.html");
