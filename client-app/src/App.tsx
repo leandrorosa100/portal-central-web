@@ -291,11 +291,11 @@ const App = () => {
           {loadingNews ? (
             <div style={{ textAlign: 'center', padding: '40px', color: C.muted }}>Carregando notícias...</div>
           ) : news.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? '2fr 1fr' : '1fr', gap: 24, alignItems: 'start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
               {/* Featured */}
               <article style={{ backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden', boxShadow: '0 1px 3px rgba(15,23,42,.08)' }}>
-                <div style={{ position: 'relative', height: isDesktop ? 300 : 190, backgroundColor: C.dark2 }}>
-                  <img src={news[0].urlToImage || 'https://picsum.photos/900/500'} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'relative', height: isDesktop ? 340 : 200, backgroundColor: C.dark2 }}>
+                  <img src={news[0].urlToImage || 'https://picsum.photos/1200/600'} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                   <span style={{ position: 'absolute', top: 14, left: 14, backgroundColor: C.blue, color: '#fff', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', padding: '4px 10px', borderRadius: 6 }}>
                     Destaque
                   </span>
@@ -310,8 +310,8 @@ const App = () => {
                 </div>
               </article>
 
-              {/* List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* List — below the featured article, filling the screen width */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
                 {news.slice(1).map((item, idx) => (
                   <a
                     key={idx}
@@ -319,19 +319,18 @@ const App = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      display: 'flex', gap: 14, textDecoration: 'none', color: C.text,
+                      display: 'flex', flexDirection: 'column', textDecoration: 'none', color: C.text,
                       backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
-                      padding: 12, boxSizing: 'border-box',
-                      boxShadow: '0 1px 3px rgba(15,23,42,.06)', transition: 'box-shadow .15s',
+                      overflow: 'hidden', boxShadow: '0 1px 3px rgba(15,23,42,.06)', transition: 'box-shadow .15s',
                     }}
                     onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(37,99,235,.12)'; }}
                     onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 3px rgba(15,23,42,.06)'; }}
                   >
-                    <img src={item.urlToImage || 'https://picsum.photos/100/100'} alt="" style={{ width: 88, height: 88, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                    <img src={item.urlToImage || 'https://picsum.photos/640/360'} alt="" style={{ width: '100%', height: 150, objectFit: 'cover', flexShrink: 0, display: 'block' }} />
+                    <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
                       <div style={{ fontSize: 11, color: C.muted2 }}>{new Date(item.publishedAt).toLocaleDateString()} · {item.sourceName}</div>
                       <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{item.title}</div>
-                      {isDesktop && <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.45 }}>{item.description}</div>}
+                      <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.description}</div>
                     </div>
                   </a>
                 ))}
@@ -436,7 +435,7 @@ const App = () => {
       )}
 
       <footer style={{ backgroundColor: C.dark, padding: '28px 16px', textAlign: 'center' }}>
-        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v1.2.0</div>
+        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v1.2.1</div>
       </footer>
     </div>
   );

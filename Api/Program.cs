@@ -161,10 +161,17 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["X-Frame-Options"] = "DENY";
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-    context.Response.Headers["Content-Security-Policy"] =
-        "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'";
+    // Scalar's UI needs an inline bootstrap script + its doc served from a relative path.
+    // Keep the strict policy for the app; relax script-src only for the docs pages.
+    var isScalarPage = context.Request.Path.StartsWithSegments("/scalar");
+    context.Response.Headers["Content-Security-Policy"] = isScalarPage
+        ? "default-src 'self'; img-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'"
+        : "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'";
     await next();
 });
+
+// Scalar resolves its OpenAPI document relative to /scalar/ — serve it from there too
+app.MapGet("/scalar/openapi/v1.json", () => Results.Redirect("/openapi/v1.json", permanent: false));
 
 // API documentation (OpenAPI + Scalar UI) available in all environments
 app.MapOpenApi();
