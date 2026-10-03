@@ -1,0 +1,10 @@
+Api/bin
+Api/obj
+Api/wwwroot
+Api/*.log
+Api/*.db
+Api/neon_app.db
+client-app/node_modules
+client-app/dist
+*.log
+.git
