@@ -22,6 +22,7 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [cityError, setCityError] = useState('');
+  const [citySearching, setCitySearching] = useState(false);
   const [cityQuery, setCityQuery] = useState('');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<CitySuggestion[]>([]);
@@ -72,15 +73,17 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
     if (suggestTimer.current) clearTimeout(suggestTimer.current);
     if (value.trim().length < 2) { setSuggestions([]); return; }
     suggestTimer.current = setTimeout(async () => {
+      setCitySearching(true);
       try {
         const res = await fetch(`/api/cities/suggest?q=${encodeURIComponent(value.trim())}`, {
           headers: { Authorization: `Bearer ***}` },
         });
-        if (res.status === 403) { setCityError('Seu usuário não tem permissão de administrador.'); setSuggestions([]); return; }
+        if (res.status === 403) { setCityError('Seu usuário não tem permissão de administrador.'); setSuggestions([]); setCitySearching(false); return; }
         const list = res.ok ? await res.json() : [];
         setSuggestions(Array.isArray(list) ? list : []);
         if (Array.isArray(list) && list.length === 0) setCityError('Nenhuma cidade encontrada com esse nome.');
       } catch { setSuggestions([]); setCityError('Não foi possível buscar sugestões agora.'); }
+      setCitySearching(false);
     }, 300);
   };
 
@@ -190,18 +193,21 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
                 value={cityQuery}
                 onChange={e => onCityQueryChange(e.target.value)}
                 onFocus={() => { if (cityQuery.trim().length >= 2) setShowSuggest(true); }}
-                onBlur={() => setTimeout(() => setShowSuggest(false), 180)}
+                onBlur={() => setTimeout(() => setShowSuggest(false), 260)}
                 onKeyDown={onCityKeyDown}
                 placeholder="Ex.: São Paulo, Lisboa..."
                 style={{ ...inputStyle, borderColor: cityError ? '#dc2626' : C.border }}
                 autoComplete="off"
               />
-              {showSuggest && suggestions.length > 0 && (
+              {showSuggest && cityQuery.trim().length >= 2 && (suggestions.length > 0 || citySearching) && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, backgroundColor: '#fff', border: `1px solid ${C.border}`, borderRadius: 10, marginTop: 4, boxShadow: '0 10px 30px rgba(15,23,42,.15)', maxHeight: 230, overflowY: 'auto' }}>
-                  {suggestions.map((s, i) => (
+                  {citySearching && suggestions.length === 0 ? (
+                    <div style={{ padding: '10px 12px', fontSize: 13, color: C.muted }}>Buscando cidades...</div>
+                  ) : suggestions.map((s, i) => (
                     <div
                       key={`${s.name}-${i}`}
                       onMouseDown={() => pickCity(s)}
+                      onTouchStart={() => pickCity(s)}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', borderBottom: i < suggestions.length - 1 ? `1px solid ${C.border}` : 'none' }}
                       onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#eff6ff'; }}
                       onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}

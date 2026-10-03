@@ -425,7 +425,7 @@ const App = () => {
                     <div key={p.id} style={{ position: 'relative', backgroundColor: C.dark, borderRadius: 10, padding: '12px 14px', paddingRight: token ? 34 : 14, border: '1px solid #334155' }}>
                       <div style={{ fontSize: 10.5, color: C.muted2, marginBottom: 4 }}>{p.sourceName || 'Fixada'}</div>
                       <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', textDecoration: 'none', lineHeight: 1.35, display: 'block' }}>{p.title}</a>
-                      {isAdmin && (
+                      {token && (
                         <button onClick={() => unpinNews(p.id)} title="Desfixar" style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', color: C.muted2, cursor: 'pointer', fontSize: 12, padding: 2 }}>✕</button>
                       )}
                     </div>
@@ -441,7 +441,7 @@ const App = () => {
                   <span style={{ position: 'absolute', top: 14, left: 14, backgroundColor: C.blue, color: '#fff', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', padding: '4px 10px', borderRadius: 6 }}>
                     Destaque
                   </span>
-                  {isAdmin && (
+                  {token && (
                     <button onClick={() => pinNews(news[0])} title="Fixar esta notícia" style={{ position: 'absolute', top: 10, right: 10, zIndex: 5, background: 'rgba(15,23,42,.65)', border: '1px solid #475569', borderRadius: 8, cursor: 'pointer', fontSize: 15, padding: '4px 8px' }}>📌</button>
                   )}
                 </div>
@@ -478,7 +478,7 @@ const App = () => {
                       <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35 }}>{item.title}</div>
                       <div style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.description}</div>
                     </div>
-                    {isAdmin && (
+                    {token && (
                       <button onClick={ev => { ev.preventDefault(); ev.stopPropagation(); pinNews(item); }} title="Fixar esta notícia" style={{ position: 'absolute', top: 8, right: 8, zIndex: 5, background: 'rgba(255,255,255,.92)', border: `1px solid ${C.border}`, borderRadius: 8, cursor: 'pointer', fontSize: 13, padding: '3px 7px', boxShadow: '0 1px 3px rgba(15,23,42,.15)' }}>📌</button>
                     )}
                   </a>
@@ -524,7 +524,7 @@ const App = () => {
               <div style={{ width: 4, height: 24, backgroundColor: C.blue, borderRadius: 2 }} />
               <h2 style={{ fontSize: isDesktop ? 24 : 20, fontWeight: 700, margin: 0 }}>Portal Original</h2>
             </div>
-            {isAdmin && (
+            {token && (
               <button onClick={() => openArticleModal(null)} style={{ padding: '9px 18px', backgroundColor: C.blue, border: 'none', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Nova matéria</button>
             )}
           </div>
@@ -539,7 +539,7 @@ const App = () => {
                   <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.35 }}>{a.title}</div>
                   <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{a.body}</div>
                   <div style={{ fontSize: 11.5, color: C.muted2, marginTop: 'auto' }}>por {a.author}</div>
-                  {isAdmin && (
+                  {token && (isAdmin || a.author === authUser) && (
                     <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
                       <button onClick={() => openArticleModal(a)} style={{ padding: '5px 10px', backgroundColor: '#fff', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>editar</button>
                       <button onClick={() => deleteArticle(a.id)} style={{ padding: '5px 10px', backgroundColor: '#fff', border: `1px solid ${C.border}`, color: '#dc2626', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>excluir</button>
@@ -679,7 +679,7 @@ const App = () => {
       )}
 
       <footer style={{ backgroundColor: C.dark, padding: '28px 16px', textAlign: 'center' }}>
-        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v2.1.1</div>
+        <div style={{ fontSize: 13, color: C.muted2 }}>© 2026 Portal Central · Sistema operacional · v2.2.0</div>
       </footer>
     </div>
   );

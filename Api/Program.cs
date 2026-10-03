@@ -124,6 +124,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOnly", p => p.RequireRole("Admin"));
+    options.AddPolicy("EditorOrAdmin", p => p.RequireRole("Admin", "Editor"));
 });
 
 // --- Security: rate limiting on login (brute-force protection) ---
@@ -425,7 +426,7 @@ app.MapPost("/api/admin/pins", async (PinnedNews input, AppDbContext db) =>
     });
     await db.SaveChangesAsync();
     return Results.Ok(await db.PinnedNews.OrderByDescending(p => p.PinnedAt).ToListAsync());
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization("EditorOrAdmin");
 
 app.MapDelete("/api/admin/pins/{id:int}", async (int id, AppDbContext db) =>
 {
@@ -434,9 +435,9 @@ app.MapDelete("/api/admin/pins/{id:int}", async (int id, AppDbContext db) =>
     db.PinnedNews.Remove(pin);
     await db.SaveChangesAsync();
     return Results.Ok(await db.PinnedNews.OrderByDescending(p => p.PinnedAt).ToListAsync());
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization("EditorOrAdmin");
 
-// --- Editoria (admin) ---
+// --- Editoria (admin ou editor; editores so mexem nas proprias materias) ---
 app.MapPost("/api/admin/articles", async (Article input, AppDbContext db, ClaimsPrincipal user) =>
 {
     if (string.IsNullOrWhiteSpace(input.Title) || string.IsNullOrWhiteSpace(input.Body))
@@ -450,12 +451,14 @@ app.MapPost("/api/admin/articles", async (Article input, AppDbContext db, Claims
     });
     await db.SaveChangesAsync();
     return Results.Ok(await db.Articles.OrderByDescending(a => a.CreatedAt).ToListAsync());
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization("EditorOrAdmin");
 
-app.MapPut("/api/admin/articles/{id:int}", async (int id, Article input, AppDbContext db) =>
+app.MapPut("/api/admin/articles/{id:int}", async (int id, Article input, AppDbContext db, ClaimsPrincipal user) =>
 {
     var article = await db.Articles.FindAsync(id);
     if (article is null) return Results.NotFound();
+    if (user.Identity?.Name != article.Author && !user.IsInRole("Admin"))
+        return Results.Forbid();
     if (string.IsNullOrWhiteSpace(input.Title) || string.IsNullOrWhiteSpace(input.Body))
         return Results.BadRequest(new { message = "Titulo e corpo obrigatorios" });
     article.Title = input.Title.Trim();
@@ -463,16 +466,18 @@ app.MapPut("/api/admin/articles/{id:int}", async (int id, Article input, AppDbCo
     article.Category = string.IsNullOrWhiteSpace(input.Category) ? "Geral" : input.Category.Trim();
     await db.SaveChangesAsync();
     return Results.Ok(await db.Articles.OrderByDescending(a => a.CreatedAt).ToListAsync());
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization("EditorOrAdmin");
 
-app.MapDelete("/api/admin/articles/{id:int}", async (int id, AppDbContext db) =>
+app.MapDelete("/api/admin/articles/{id:int}", async (int id, AppDbContext db, ClaimsPrincipal user) =>
 {
     var article = await db.Articles.FindAsync(id);
     if (article is null) return Results.NotFound();
+    if (user.Identity?.Name != article.Author && !user.IsInRole("Admin"))
+        return Results.Forbid();
     db.Articles.Remove(article);
     await db.SaveChangesAsync();
     return Results.Ok(await db.Articles.OrderByDescending(a => a.CreatedAt).ToListAsync());
-}).RequireAuthorization("AdminOnly");
+}).RequireAuthorization("EditorOrAdmin");
 
 // --- Usuarios (admin) ---
 app.MapGet("/api/admin/users", async (AppDbContext db) =>
