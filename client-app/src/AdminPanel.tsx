@@ -127,12 +127,21 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
   };
 
   const removeCity = async (id: number) => {
+    // Ask user for confirmation before performing a destructive DELETE
+    if (!window.confirm('Confirma a exclusão desta cidade?')) {
+      // Usuário cancelou; aborta a operação silenciosamente
+      return;
+    }
     setMsg('');
     try {
       await api(`/admin/cities/${id}`, { method: 'DELETE' });
       onCitiesChanged();
       refreshStats();
-    } catch (e) { setMsg((e as Error).message); }
+    } catch (e) {
+      // Erro na API – exibe toast (alert) e registra mensagem
+      alert('Erro ao excluir cidade: ' + (e as Error).message);
+      setMsg((e as Error).message);
+    }
   };
 
   const addUser = async (e: FormEvent) => {
@@ -149,11 +158,18 @@ const AdminPanel = ({ token, cities, onCitiesChanged, onAuthFail }: Props) => {
   };
 
   const removeUser = async (id: number) => {
+    // Confirma exclusão de usuário antes de chamar a API
+    if (!window.confirm('Confirma a exclusão deste usuário?')) {
+      return;
+    }
     setMsg('');
     try {
       setUsers(await api(`/admin/users/${id}`, { method: 'DELETE' }));
       refreshStats();
-    } catch (e) { setMsg((e as Error).message); }
+    } catch (e) {
+      alert('Erro ao excluir usuário: ' + (e as Error).message);
+      setMsg((e as Error).message);
+    }
   };
 
   const cardStyle = { backgroundColor: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, boxShadow: '0 1px 3px rgba(15,23,42,.08)', textAlign: 'left' as const };
